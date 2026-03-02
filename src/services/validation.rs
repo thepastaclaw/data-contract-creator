@@ -2,7 +2,7 @@ use crate::types::ValidationError;
 use anyhow::Result;
 use dpp::{
     consensus::ConsensusError,
-    data_contract::{DataContractFactory, JsonValue},
+    data_contract::{DataContract, DataContractFactory, JsonValue},
     platform_value::Value as PlatformValue,
     prelude::Identifier,
     util::json_value::JsonValueExt,
@@ -47,9 +47,8 @@ impl ValidationService {
         match contract_result {
             Ok(contract) => {
                 // Convert DataContract to JsonValue
-                let mut contract_json: JsonValue =
-                    serde_json::to_value(contract.data_contract().as_v1())
-                        .map_err(|e| format!("Failed to serialize contract: {}", e))?;
+                let mut contract_json =
+                    Self::serialize_data_contract(contract.data_contract())?;
 
                 // Insert a blank description for the validator
                 contract_json
@@ -73,6 +72,18 @@ impl ValidationService {
                 "".to_string(),
                 format!("{}", e),
             )]),
+        }
+    }
+
+    fn serialize_data_contract(data_contract: &DataContract) -> Result<JsonValue, String> {
+        if let Some(v1_contract) = data_contract.as_v1() {
+            serde_json::to_value(v1_contract)
+                .map_err(|e| format!("Failed to serialize v1 contract: {}", e))
+        } else if let Some(v0_contract) = data_contract.as_v0() {
+            serde_json::to_value(v0_contract)
+                .map_err(|e| format!("Failed to serialize v0 contract: {}", e))
+        } else {
+            Err("Unsupported data contract version returned by DPP".to_string())
         }
     }
 
