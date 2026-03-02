@@ -24,7 +24,7 @@ Here is a simple, modern-style example of a data contract with one document type
 
 {"post":{"type":"object","description":"A public post in a social app","comment":"Stores user-authored posts with metadata","properties":{"title":{"position":0,"type":"string","description":"Short post title","maxLength":63},"body":{"position":1,"type":"string","description":"Main content of the post","maxLength":1024},"authorId":{"position":2,"type":"array","description":"Identifier of the post author","byteArray":true,"minItems":32,"maxItems":32},"createdAt":{"position":3,"type":"integer","description":"Unix timestamp in milliseconds"}},"indices":[{"name":"authorId","properties":[{"authorId":"asc"}]},{"name":"createdAt","properties":[{"createdAt":"asc"}]}],"required":["title","body","authorId","createdAt"],"additionalProperties":false}}
 
-While this example data contract only has one document type, data contracts should usually have more than one. For example, the example "nft" data contract could also have document types for "listing" and "transaction". Maybe the developer also wants to have user profiles, so they could include a "userProfile" document type.
+While this example data contract only has one document type, data contracts should usually have more than one. For example, the social app above could also have document types for "comment" and "like" so users can interact with posts. Maybe the developer also wants to have user profiles, so they could include a "userProfile" document type.
 
 *Requirements*:
 The following requirements must be met in Dash Platform data contracts:
@@ -52,24 +52,24 @@ App description:
 
     /// Context prepended to user-input prompts after the first prompt
     const SECOND_PROMPT_PRE: &'static str = r#"
-I'm going to ask you to make some changes to a Dash Platform data contract after giving you some context and rules. 
+I'm going to ask you to make some changes to a Dash Platform data contract after giving you some context and rules.
 
 *Background info*:
-Document types can also define `tokens` for fungible/non-fungible token support.
-Data contracts can define `groups` which allow multiple identities to jointly manage documents.
+Dash Platform data contracts are JSON schemas that define the structures of data an application can store.
+The top-level keys in a data contract are usually document types, but root-level "groups" (for multi-identity management) or "tokens" (for fungible/non-fungible token support) may also be present alongside document types.
 
 *Requirements*:
-The following requirements must be met in Dash Platform data contracts: 
- - Indexes may only have "asc" sort order. 
- - All "array" properties must specify "byteArray": true. 
- - All "string" properties that are used in indexes must specify "maxLength", which must be no more than 63. 
- - All "array" properties that are used in indexes must specify "maxItems", and it must be less than or equal to 255. 
- - All "object" properties must define at least 1 property within themselves. 
+The following requirements must be met in Dash Platform data contracts:
+ - Indexes may only have "asc" sort order.
+ - All "string" properties that are used in indexes must specify "maxLength", which must be no more than 63.
+ - All "array" properties that are used in indexes must specify "maxItems", and it must be less than or equal to 255.
+ - All "array" properties must specify `"byteArray": true`.
+ - All "object" properties must define at least 1 property within themselves.
+ - All properties must define a "position" field, which is a number starting at 0, incrementing for each property.
  - Contested unique indexes can be marked with `contested` to resolve ownership through governance.
 
-*Changes to be made*: 
-Make the following change(s) to this Dash Platform data contract JSON schema, along with any other changes that are necessary to make it valid according to the rules above. 
-Note that the highest-level keys in the data contract are called "document types".
+*Changes to be made*:
+Make the following change(s) to this Dash Platform data contract JSON schema, along with any other edits needed to keep the resulting schema valid according to all the rules above.
 Return ONLY the JSON object, no markdown code fences, no explanation text:
 
 "#;
@@ -96,7 +96,7 @@ Return ONLY the JSON object, no markdown code fences, no explanation text:
             "model": "gpt-5-mini",
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"},
-            "max_tokens": 8192,
+            "max_completion_tokens": 8192,
             "temperature": 0.2
         });
 
