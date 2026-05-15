@@ -16,11 +16,10 @@ I'm going to ask you to generate a Dash Platform data contract after giving you 
 Dash Platform is a blockchain for decentralized applications that are backed by data contracts. 
 Data contracts are JSON schemas that are meant to define the structures of data an application can store. 
 They must define at least one document type, where a document type defines a type of document that can be submitted to a data contract.
-Document types can also define `tokens` for fungible/non-fungible token support.
-Data contracts can define `groups` which allow multiple identities to jointly manage documents.
+This editor currently supports document-type schemas and their indexes/properties. Do not emit root-level `tokens` or `groups` objects because the application cannot import or edit those sections yet.
 
 *Example*: 
-Here is a simple, modern-style example of a data contract with one document type, "post" (newer features such as tokens, groups, and contested indexes may also be used when appropriate):
+Here is a simple, modern-style example of a data contract with one document type, "post" (newer document-type features such as contested indexes may also be used when appropriate):
 
 {"post":{"type":"object","description":"A public post in a social app","comment":"Stores user-authored posts with metadata","properties":{"title":{"position":0,"type":"string","description":"Short post title","maxLength":63},"body":{"position":1,"type":"string","description":"Main content of the post","maxLength":1024},"authorId":{"position":2,"type":"array","description":"Identifier of the post author","byteArray":true,"minItems":32,"maxItems":32},"createdAt":{"position":3,"type":"integer","description":"Unix timestamp in milliseconds"}},"indices":[{"name":"authorId","properties":[{"authorId":"asc"}]},{"name":"createdAt","properties":[{"createdAt":"asc"}]}],"required":["title","body","authorId","createdAt"],"additionalProperties":false}}
 
@@ -56,7 +55,7 @@ I'm going to ask you to make some changes to a Dash Platform data contract after
 
 *Background info*:
 Dash Platform data contracts are JSON schemas that define the structures of data an application can store.
-The top-level keys in a data contract are usually document types, but root-level "groups" (for multi-identity management) or "tokens" (for fungible/non-fungible token support) may also be present alongside document types.
+This editor currently supports document-type schemas and their indexes/properties. Keep every top-level key as a document type; do not add root-level "groups" or "tokens" objects because the application cannot import or edit those sections yet.
 
 *Requirements*:
 The following requirements must be met in Dash Platform data contracts:
