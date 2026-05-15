@@ -8,7 +8,20 @@ use web_sys::{Request, RequestInit, RequestMode, Response};
 pub struct OpenAiService;
 
 impl OpenAiService {
-    /// Context prepended to the first user-input prompt when creating a new contract
+    /// Context shared by generation and edit prompts
+    const SHARED_REQUIREMENTS: &'static str = r#"
+*Requirements*:
+The following requirements must be met in Dash Platform data contracts:
+ - Indexes may only have "asc" sort order.
+ - All "string" properties that are used in indexes must specify "maxLength", which must be no more than 63.
+ - All "array" properties that are used in indexes must specify "maxItems", and it must be less than or equal to 255.
+ - All "array" properties must specify `"byteArray": true`.
+ - All "object" properties must define at least 1 property within themselves.
+ - All properties must define a "position" field, which is a number starting at 0, incrementing for each property.
+ - Contested unique indexes can be marked with `contested` to resolve ownership through governance.
+"#;
+
+    /// Context prepended before shared requirements when creating a new contract
     const FIRST_PROMPT_PRE: &'static str = r#"
 I'm going to ask you to generate a Dash Platform data contract after giving you some context and rules. 
 
@@ -24,17 +37,10 @@ Here is a simple, modern-style example of a data contract with one document type
 {"post":{"type":"object","description":"A public post in a social app","comment":"Stores user-authored posts with metadata","properties":{"title":{"position":0,"type":"string","description":"Short post title","maxLength":63},"body":{"position":1,"type":"string","description":"Main content of the post","maxLength":1024},"authorId":{"position":2,"type":"array","description":"Identifier of the post author","byteArray":true,"minItems":32,"maxItems":32},"createdAt":{"position":3,"type":"integer","description":"Unix timestamp in milliseconds"}},"indices":[{"name":"authorId","properties":[{"authorId":"asc"}]},{"name":"createdAt","properties":[{"createdAt":"asc"}]}],"required":["title","body","authorId","createdAt"],"additionalProperties":false}}
 
 While this example data contract only has one document type, data contracts should usually have more than one. For example, the social app above could also have document types for "comment" and "like" so users can interact with posts. Maybe the developer also wants to have user profiles, so they could include a "userProfile" document type.
+"#;
 
-*Requirements*:
-The following requirements must be met in Dash Platform data contracts:
- - Indexes may only have "asc" sort order.
- - All "string" properties that are used in indexes must specify "maxLength", which must be no more than 63.
- - All "array" properties that are used in indexes must specify "maxItems", and it must be less than or equal to 255.
- - All "array" properties must specify `"byteArray": true`.
- - All "object" properties must define at least 1 property within themselves.
- - All properties must define a "position" field, which is a number starting at 0, incrementing for each property.
- - Contested unique indexes can be marked with `contested` to resolve ownership through governance.
-
+    /// Context appended after shared requirements when creating a new contract
+    const FIRST_PROMPT_POST: &'static str = r#"
 *App description*: 
 Now I will give you a user prompt that describes the application that you will generate a data contract for.
 
@@ -49,24 +55,17 @@ App description:
 
 "#;
 
-    /// Context prepended to user-input prompts after the first prompt
+    /// Context prepended before shared requirements for follow-up prompts
     const SECOND_PROMPT_PRE: &'static str = r#"
 I'm going to ask you to make some changes to a Dash Platform data contract after giving you some context and rules.
 
 *Background info*:
 Dash Platform data contracts are JSON schemas that define the structures of data an application can store.
 This editor currently supports document-type schemas and their indexes/properties. Keep every top-level key as a document type; do not add root-level "groups" or "tokens" objects because the application cannot import or edit those sections yet.
+"#;
 
-*Requirements*:
-The following requirements must be met in Dash Platform data contracts:
- - Indexes may only have "asc" sort order.
- - All "string" properties that are used in indexes must specify "maxLength", which must be no more than 63.
- - All "array" properties that are used in indexes must specify "maxItems", and it must be less than or equal to 255.
- - All "array" properties must specify `"byteArray": true`.
- - All "object" properties must define at least 1 property within themselves.
- - All properties must define a "position" field, which is a number starting at 0, incrementing for each property.
- - Contested unique indexes can be marked with `contested` to resolve ownership through governance.
-
+    /// Context appended after shared requirements for follow-up prompts
+    const SECOND_PROMPT_POST: &'static str = r#"
 *Changes to be made*:
 Make the following change(s) to this Dash Platform data contract JSON schema, along with any other edits needed to keep the resulting schema valid according to all the rules above.
 Return ONLY the JSON object, no markdown code fences, no explanation text:
@@ -77,13 +76,21 @@ Return ONLY the JSON object, no markdown code fences, no explanation text:
     pub async fn generate_contract(prompt: &str, existing_schema: Option<&str>) -> Result<String> {
         let full_prompt = if let Some(schema) = existing_schema {
             format!(
-                "{}\n\nExisting schema:\n{}\n\nUser request:\n{}",
+                "{}{}{}\n\nExisting schema:\n{}\n\nUser request:\n{}",
                 Self::SECOND_PROMPT_PRE,
+                Self::SHARED_REQUIREMENTS,
+                Self::SECOND_PROMPT_POST,
                 schema,
                 prompt
             )
         } else {
-            format!("{}{}", Self::FIRST_PROMPT_PRE, prompt)
+            format!(
+                "{}{}{}{}",
+                Self::FIRST_PROMPT_PRE,
+                Self::SHARED_REQUIREMENTS,
+                Self::FIRST_PROMPT_POST,
+                prompt
+            )
         };
 
         Self::call_api(&full_prompt).await
