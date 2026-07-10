@@ -1,3 +1,4 @@
+use crate::utils::constants::{OPENAI_MAX_COMPLETION_TOKENS, OPENAI_MODEL};
 use anyhow::{anyhow, Result};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
@@ -99,12 +100,12 @@ Return ONLY the JSON object, no markdown code fences, no explanation text:
     /// Makes the actual API call to OpenAI
     async fn call_api(prompt: &str) -> Result<String> {
         let params = json!({
-            "model": "gpt-5-mini",
+            "model": OPENAI_MODEL,
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"},
             // gpt-5-mini only supports the default temperature (1); sending any
             // other value returns a 400, so we omit the field entirely.
-            "max_completion_tokens": 8192
+            "max_completion_tokens": OPENAI_MAX_COMPLETION_TOKENS
         });
 
         let mut opts = RequestInit::new();
