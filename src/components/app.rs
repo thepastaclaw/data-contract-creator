@@ -680,8 +680,11 @@ impl Component for App {
                 match JsonParser::parse_contract(&schema) {
                     Ok(document_types) => {
                         self.document_types = document_types;
-                        self.validation_requested = true; // AI generation should trigger validation
-                        self.update_json_output();
+                        // Run DPP validation on the generated contract. ValidateContract
+                        // regenerates json_output from document_types and then invokes
+                        // ValidationService, so success/errors surface in the UI. (Setting
+                        // validation_requested here would be undone by update_json_output.)
+                        ctx.link().send_message(AppMsg::ValidateContract);
                     }
                     Err(e) => {
                         self.ai_errors

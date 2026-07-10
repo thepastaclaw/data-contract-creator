@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::json_generator::JsonGenerator;
+    use super::super::json_parser::JsonParser;
     use super::super::validation::ValidationService;
     use crate::types::{DataType, DocumentType, Property};
 
@@ -112,5 +113,32 @@ mod tests {
 
         // Empty JSON should fail validation (user needs to add content)
         assert!(!errors.is_empty(), "Empty contract should fail validation");
+    }
+
+    #[test]
+    fn ai_generation_pipeline_parses_regenerates_and_validates() {
+        // Mirrors the data path AppMsg::AiGenerationComplete -> ValidateContract
+        // drives: parse the model's schema into document types, regenerate the
+        // contract JSON from them, then run DPP validation. The Yew message
+        // dispatch itself needs a browser/wasm harness and is not exercised here;
+        // this locks in that the underlying pipeline runs end-to-end.
+        let ai_schema = r#"{"note":{"type":"object","description":"A note","$comment":"internal","properties":{"title":{"position":0,"type":"string","description":"Title","maxLength":63}},"indices":[{"name":"title","properties":[{"title":"asc"}]}],"required":["title"],"additionalProperties":false}}"#;
+
+        let doc_types = JsonParser::parse_contract(ai_schema).expect("AI schema should parse");
+        let regenerated = JsonGenerator::generate_contract(&doc_types);
+        let json_str = serde_json::to_string(&regenerated).unwrap();
+
+        // The parse -> generate round-trip preserved the document type and its
+        // $comment (the field the prompt now instructs the model to emit).
+        assert!(json_str.contains("\"note\""), "doc type lost: {}", json_str);
+        assert!(
+            json_str.contains("\"$comment\""),
+            "comment lost: {}",
+            json_str
+        );
+
+        // Validation actually executes on the regenerated contract (issue #31).
+        let result = ValidationService::validate_schema(&json_str);
+        assert!(result.is_ok(), "validation should execute: {:?}", result);
     }
 }
