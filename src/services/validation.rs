@@ -47,8 +47,7 @@ impl ValidationService {
         match contract_result {
             Ok(contract) => {
                 // Convert DataContract to JsonValue
-                let mut contract_json =
-                    Self::serialize_data_contract(contract.data_contract())?;
+                let mut contract_json = Self::serialize_data_contract(contract.data_contract())?;
 
                 // Insert a blank description for the validator
                 contract_json

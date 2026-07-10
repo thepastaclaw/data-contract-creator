@@ -34,7 +34,7 @@ This editor currently supports document-type schemas and their indexes/propertie
 *Example*: 
 Here is a simple, modern-style example of a data contract with one document type, "post" (newer document-type features such as contested indexes may also be used when appropriate):
 
-{"post":{"type":"object","description":"A public post in a social app","comment":"Stores user-authored posts with metadata","properties":{"title":{"position":0,"type":"string","description":"Short post title","maxLength":63},"body":{"position":1,"type":"string","description":"Main content of the post","maxLength":1024},"authorId":{"position":2,"type":"array","description":"Identifier of the post author","byteArray":true,"minItems":32,"maxItems":32},"createdAt":{"position":3,"type":"integer","description":"Unix timestamp in milliseconds"}},"indices":[{"name":"authorId","properties":[{"authorId":"asc"}]},{"name":"createdAt","properties":[{"createdAt":"asc"}]}],"required":["title","body","authorId","createdAt"],"additionalProperties":false}}
+{"post":{"type":"object","description":"A public post in a social app","$comment":"Stores user-authored posts with metadata","properties":{"title":{"position":0,"type":"string","description":"Short post title","maxLength":63},"body":{"position":1,"type":"string","description":"Main content of the post","maxLength":1024},"authorId":{"position":2,"type":"array","description":"Identifier of the post author","byteArray":true,"minItems":32,"maxItems":32},"createdAt":{"position":3,"type":"integer","description":"Unix timestamp in milliseconds"}},"indices":[{"name":"authorId","properties":[{"authorId":"asc"}]},{"name":"createdAt","properties":[{"createdAt":"asc"}]}],"required":["title","body","authorId","createdAt"],"additionalProperties":false}}
 
 While this example data contract only has one document type, data contracts should usually have more than one. For example, the social app above could also have document types for "comment" and "like" so users can interact with posts. Maybe the developer also wants to have user profiles, so they could include a "userProfile" document type.
 "#;
@@ -46,7 +46,7 @@ Now I will give you a user prompt that describes the application that you will g
 
 When creating the data contract, please:
  - Include descriptions for every document type and property. Be creative, extensive, and utilize multiple document types if possible.
- - Include both "description" and "comment" fields for every document type (at the same level as "type", "properties", etc.).
+ - Include both "description" and "$comment" fields for every document type (at the same level as "type", "properties", etc.).
  - Include indexes for any properties that it makes sense for a useful app to index. More is better. 
  - Return ONLY the JSON object, no markdown code fences, no explanation text.
  - Double check that all requirements and requests above are met. Again, all "array" properties must specify `"byteArray": true`.
@@ -102,8 +102,9 @@ Return ONLY the JSON object, no markdown code fences, no explanation text:
             "model": "gpt-5-mini",
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"},
-            "max_completion_tokens": 8192,
-            "temperature": 0.2
+            // gpt-5-mini only supports the default temperature (1); sending any
+            // other value returns a 400, so we omit the field entirely.
+            "max_completion_tokens": 8192
         });
 
         let mut opts = RequestInit::new();
@@ -200,20 +201,72 @@ Return ONLY the JSON object, no markdown code fences, no explanation text:
             .and_then(|content| content.as_str())
             .ok_or_else(|| anyhow!("Invalid response format from API"))?;
 
-        // Extract JSON from the response
-        let start = content
-            .find('{')
-            .ok_or_else(|| anyhow!("No JSON found in API response"))?;
-        let end = content
-            .rfind('}')
-            .ok_or_else(|| anyhow!("No valid JSON found in API response"))?;
+        // `response_format: {"type": "json_object"}` guarantees the API returns
+        // a single JSON object in `content`. Parse it directly and require an
+        // object. Fenced, prose-wrapped, or non-object content means the request
+        // contract was not honored (e.g. a proxy that stripped `response_format`),
+        // so fail loudly instead of trying to salvage a substring.
+        let trimmed = content.trim();
+        let value: serde_json::Value = serde_json::from_str(trimmed)
+            .map_err(|e| anyhow!("API response was not valid JSON: {}", e))?;
 
-        let schema_json = &content[start..=end];
+        if !value.is_object() {
+            return Err(anyhow!("API response JSON was not an object"));
+        }
 
-        // Validate that it's proper JSON
-        serde_json::from_str::<serde_json::Value>(schema_json)
-            .map_err(|e| anyhow!("Extracted text is not valid JSON: {}", e))?;
+        Ok(trimmed.to_string())
+    }
+}
 
-        Ok(schema_json.to_string())
+#[cfg(test)]
+mod tests {
+    use super::OpenAiService;
+
+    fn api_response(content: &str) -> String {
+        serde_json::json!({
+            "choices": [{"message": {"content": content}}]
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn parses_pure_json_object_directly() {
+        let response = api_response("{\"post\":{\"type\":\"object\"}}");
+        let schema = OpenAiService::extract_json_schema(&response).unwrap();
+        assert_eq!(schema, "{\"post\":{\"type\":\"object\"}}");
+    }
+
+    #[test]
+    fn trims_surrounding_whitespace_from_pure_json() {
+        let response = api_response("  \n{\"a\":1}\n ");
+        let schema = OpenAiService::extract_json_schema(&response).unwrap();
+        assert_eq!(schema, "{\"a\":1}");
+    }
+
+    #[test]
+    fn rejects_markdown_fenced_json() {
+        // Under JSON mode the API must return a bare object; fences mean the
+        // request contract was not honored and must fail loudly.
+        let response = api_response("```json\n{\"a\":1}\n```");
+        assert!(OpenAiService::extract_json_schema(&response).is_err());
+    }
+
+    #[test]
+    fn rejects_prose_wrapped_json() {
+        let response = api_response("Here is your contract: {\"a\":1}");
+        assert!(OpenAiService::extract_json_schema(&response).is_err());
+    }
+
+    #[test]
+    fn rejects_non_object_json() {
+        // A syntactically valid array/scalar is still not a contract object.
+        assert!(OpenAiService::extract_json_schema(&api_response("[1,2,3]")).is_err());
+        assert!(OpenAiService::extract_json_schema(&api_response("42")).is_err());
+    }
+
+    #[test]
+    fn errors_when_no_json_present() {
+        let response = api_response("sorry, I cannot help with that");
+        assert!(OpenAiService::extract_json_schema(&response).is_err());
     }
 }
