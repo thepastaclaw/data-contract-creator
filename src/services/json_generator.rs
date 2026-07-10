@@ -92,6 +92,15 @@ impl JsonGenerator {
             doc_obj.insert("$comment".to_string(), Value::String(doc_type.comment.clone()));
         }
 
+        // Re-emit the document-level `documentsMutable` flag when it was set, so
+        // an immutable (contested-index) document type stays immutable.
+        if let Some(documents_mutable) = doc_type.documents_mutable {
+            doc_obj.insert(
+                "documentsMutable".to_string(),
+                Value::Bool(documents_mutable),
+            );
+        }
+
         Value::Object(doc_obj)
     }
 

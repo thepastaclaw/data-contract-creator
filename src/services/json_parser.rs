@@ -76,6 +76,14 @@ impl JsonParser {
             doc_type.comment = comment.to_string();
         }
 
+        // Preserve the document-level `documentsMutable` flag. This must survive
+        // the round-trip because a contested unique index is only valid when the
+        // document type is immutable (`documentsMutable: false`); dropping it
+        // makes DPP raise ContestedUniqueIndexOnMutableDocumentTypeError.
+        if let Some(documents_mutable) = doc_obj.get("documentsMutable").and_then(|v| v.as_bool()) {
+            doc_type.documents_mutable = Some(documents_mutable);
+        }
+
         // Update required flags for properties
         for property in &mut doc_type.properties {
             property.required = doc_type.required.contains(&property.name);
@@ -411,6 +419,43 @@ mod tests {
         });
 
         assert!(JsonParser::parse_contract(&input.to_string()).is_err());
+    }
+
+    #[test]
+    fn documents_mutable_flag_survives_round_trip() {
+        let input = json!({
+            "widget": {
+                "type": "object",
+                "documentsMutable": false,
+                "properties": {"name": {"position": 0, "type": "string", "maxLength": 63}},
+                "indices": [{"name": "byName", "properties": [{"name": "asc"}]}],
+                "additionalProperties": false
+            }
+        });
+
+        let doc_types = JsonParser::parse_contract(&input.to_string()).unwrap();
+        assert_eq!(doc_types[0].documents_mutable, Some(false));
+
+        let generated = JsonGenerator::generate_contract(&doc_types);
+        assert_eq!(generated["widget"]["documentsMutable"], json!(false));
+    }
+
+    #[test]
+    fn absent_documents_mutable_is_none_and_omitted() {
+        let input = json!({
+            "widget": {
+                "type": "object",
+                "properties": {"name": {"position": 0, "type": "string", "maxLength": 63}},
+                "indices": [{"name": "byName", "properties": [{"name": "asc"}]}],
+                "additionalProperties": false
+            }
+        });
+
+        let doc_types = JsonParser::parse_contract(&input.to_string()).unwrap();
+        assert!(doc_types[0].documents_mutable.is_none());
+
+        let generated = JsonGenerator::generate_contract(&doc_types);
+        assert!(generated["widget"].get("documentsMutable").is_none());
     }
 
     #[test]

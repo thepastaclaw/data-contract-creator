@@ -141,4 +141,92 @@ mod tests {
         let result = ValidationService::validate_schema(&json_str);
         assert!(result.is_ok(), "validation should execute: {:?}", result);
     }
+
+    // Minimal valid contested-index document schema, modeled on the pinned DPP's
+    // DPNS `domain` document type: an immutable (`documentsMutable: false`)
+    // document type whose single unique index carries a `contested` object with
+    // `resolution: 0` (masternode vote) and a `fieldMatches` regex. This is the
+    // shape the prompt now instructs the model to produce.
+    const CONTESTED_SCHEMA: &str = r#"{
+        "card": {
+            "type": "object",
+            "documentsMutable": false,
+            "properties": {
+                "name": {"position": 0, "type": "string", "maxLength": 63, "description": "Card name"}
+            },
+            "indices": [{
+                "name": "byName",
+                "properties": [{"name": "asc"}],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [{"field": "name", "regexPattern": "^[a-zA-Z0-9]{3,19}$"}],
+                    "resolution": 0,
+                    "description": "Contested name resolved by masternode vote"
+                }
+            }],
+            "required": ["name"],
+            "additionalProperties": false
+        }
+    }"#;
+
+    #[test]
+    fn contested_document_round_trips_and_validates_without_mutable_error() {
+        // Parse -> regenerate: documentsMutable and the contested object must
+        // survive the trip through the internal model.
+        let doc_types =
+            JsonParser::parse_contract(CONTESTED_SCHEMA).expect("contested schema parses");
+        assert_eq!(doc_types[0].documents_mutable, Some(false));
+        assert!(doc_types[0].indices[0].contested.is_some());
+
+        let regenerated = JsonGenerator::generate_contract(&doc_types);
+        let json_str = serde_json::to_string(&regenerated).unwrap();
+        assert_eq!(
+            regenerated["card"]["documentsMutable"],
+            serde_json::json!(false)
+        );
+        assert!(regenerated["card"]["indices"][0]["contested"].is_object());
+
+        // DPP must accept the regenerated contract. In particular it must NOT
+        // raise ContestedUniqueIndexOnMutableDocumentTypeError, which is exactly
+        // what happens if documentsMutable is lost.
+        let errors = ValidationService::validate_schema(&json_str)
+            .expect("validation should execute for contested contract");
+        let joined = errors
+            .iter()
+            .map(|e| e.display_message())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            !joined.contains("mutable") && !joined.to_lowercase().contains("contested"),
+            "contested contract wrongly rejected: {}",
+            joined
+        );
+        assert!(
+            errors.is_empty(),
+            "contested contract should validate cleanly, got: {}",
+            joined
+        );
+    }
+
+    #[test]
+    fn contested_document_without_documents_mutable_is_rejected_by_dpp() {
+        // Guard test: the same schema WITHOUT `documentsMutable: false` must be
+        // rejected, proving the flag is load-bearing (documents default to
+        // mutable) and that preserving it is what keeps the contract valid.
+        let without_flag = CONTESTED_SCHEMA.replace("\"documentsMutable\": false,", "");
+        let errors =
+            ValidationService::validate_schema(&without_flag).expect("validation should execute");
+        // DPP rejects it with ContestedUniqueIndexOnMutableDocumentTypeError
+        // ("...has a contested unique index ... but is set as mutable").
+        let joined = errors
+            .iter()
+            .map(|e| e.display_message())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            joined.contains("mutable"),
+            "expected the contested-on-mutable rejection, got: {}",
+            joined
+        );
+    }
 }

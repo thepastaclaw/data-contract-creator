@@ -15,6 +15,11 @@ pub struct DocumentType {
     pub comment: String,
     pub description: String,
     pub keywords: String,
+    /// Document-level `documentsMutable` flag. `None` means the field is absent
+    /// (DPP applies the contract default of `true`). A contested unique index
+    /// requires this to be `Some(false)`, so it must be preserved through the
+    /// parse/generate round-trip or DPP rejects the contract.
+    pub documents_mutable: Option<bool>,
 }
 
 impl Default for DocumentType {
@@ -30,6 +35,7 @@ impl Default for DocumentType {
             comment: String::new(),
             description: String::new(),
             keywords: String::new(),
+            documents_mutable: None,
         }
     }
 }
