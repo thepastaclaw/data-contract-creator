@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// Index properties for database optimization
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +44,13 @@ pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperties>,
     pub unique: bool,
+    /// Raw `contested` metadata for a contested unique index, preserved
+    /// verbatim so it survives the parse/generate round-trip. Per DPP this is
+    /// a JSON object (e.g. `{"resolution": 0, "fieldMatches": [...]}`), not a
+    /// boolean. The editor has no dedicated UI for it yet, so it is stored and
+    /// re-emitted opaquely rather than being broken into typed fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contested: Option<Value>,
 }
 
 impl Index {
@@ -52,6 +60,7 @@ impl Index {
             name,
             properties: Vec::new(),
             unique: false,
+            contested: None,
         }
     }
 

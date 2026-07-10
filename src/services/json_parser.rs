@@ -295,6 +295,16 @@ impl JsonParser {
             index.unique = unique;
         }
 
+        // Parse contested-index metadata. Per DPP this must be a JSON object
+        // (e.g. `{"resolution": 0}`); reject other shapes rather than silently
+        // dropping them so the advertised feature round-trips faithfully.
+        if let Some(contested) = index_obj.get("contested") {
+            if !contested.is_object() {
+                return Err("Index 'contested' must be an object".to_string());
+            }
+            index.contested = Some(contested.clone());
+        }
+
         Ok(index)
     }
 
@@ -343,5 +353,81 @@ impl JsonParser {
         }
 
         Ok(required_props)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JsonParser;
+    use crate::services::json_generator::JsonGenerator;
+    use serde_json::json;
+
+    #[test]
+    fn contested_index_metadata_survives_round_trip() {
+        let contested = json!({
+            "resolution": 0,
+            "fieldMatches": [{"field": "name", "regexPattern": "^.{3,63}$"}],
+            "description": "Contested by name"
+        });
+        let input = json!({
+            "widget": {
+                "type": "object",
+                "properties": {"name": {"position": 0, "type": "string", "maxLength": 63}},
+                "indices": [{
+                    "name": "ownership",
+                    "properties": [{"name": "asc"}],
+                    "unique": true,
+                    "contested": contested
+                }],
+                "additionalProperties": false
+            }
+        });
+
+        let doc_types = JsonParser::parse_contract(&input.to_string()).unwrap();
+        // Parser preserves the metadata verbatim on the internal type.
+        assert_eq!(doc_types[0].indices[0].contested.as_ref(), Some(&contested));
+
+        // Generator re-emits it unchanged (the feature round-trips).
+        let generated = JsonGenerator::generate_contract(&doc_types);
+        let out_index = &generated["widget"]["indices"][0];
+        assert_eq!(out_index["contested"], contested);
+        assert_eq!(out_index["unique"], json!(true));
+    }
+
+    #[test]
+    fn contested_must_be_an_object_not_a_boolean() {
+        let input = json!({
+            "widget": {
+                "type": "object",
+                "properties": {"name": {"position": 0, "type": "string", "maxLength": 63}},
+                "indices": [{
+                    "name": "ownership",
+                    "properties": [{"name": "asc"}],
+                    "unique": true,
+                    "contested": true
+                }],
+                "additionalProperties": false
+            }
+        });
+
+        assert!(JsonParser::parse_contract(&input.to_string()).is_err());
+    }
+
+    #[test]
+    fn index_without_contested_omits_the_key() {
+        let input = json!({
+            "widget": {
+                "type": "object",
+                "properties": {"name": {"position": 0, "type": "string", "maxLength": 63}},
+                "indices": [{"name": "byName", "properties": [{"name": "asc"}]}],
+                "additionalProperties": false
+            }
+        });
+
+        let doc_types = JsonParser::parse_contract(&input.to_string()).unwrap();
+        assert!(doc_types[0].indices[0].contested.is_none());
+
+        let generated = JsonGenerator::generate_contract(&doc_types);
+        assert!(generated["widget"]["indices"][0].get("contested").is_none());
     }
 }

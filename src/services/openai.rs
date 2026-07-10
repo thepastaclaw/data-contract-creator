@@ -18,7 +18,7 @@ The following requirements must be met in Dash Platform data contracts:
  - All "array" properties must specify `"byteArray": true`.
  - All "object" properties must define at least 1 property within themselves.
  - All properties must define a "position" field, which is a number starting at 0, incrementing for each property.
- - Contested unique indexes can be marked with `contested` to resolve ownership through governance.
+ - Contested unique indexes resolve ownership through governance. Such an index must set `"unique": true` and include a `"contested"` object (never a boolean) with `"resolution": 0`, and may optionally include a valid `"fieldMatches"` array and a `"description"` string.
 "#;
 
     /// Context prepended before shared requirements when creating a new contract

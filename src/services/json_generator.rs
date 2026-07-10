@@ -287,6 +287,11 @@ impl JsonGenerator {
             index_obj.insert("unique".to_string(), Value::Bool(true));
         }
 
+        // Re-emit preserved contested-index metadata verbatim.
+        if let Some(contested) = &index.contested {
+            index_obj.insert("contested".to_string(), contested.clone());
+        }
+
         Value::Object(index_obj)
     }
 }
